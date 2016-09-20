@@ -82,6 +82,7 @@ module NewRelicApi
   ACCOUNT_RESOURCE_PATH = '/api/v1/accounts/:account_id/' #:nodoc:
   ACCOUNT_AGENT_RESOURCE_PATH = ACCOUNT_RESOURCE_PATH + 'agents/:agent_id/' #:nodoc:
   ACCOUNT_APPLICATION_RESOURCE_PATH = ACCOUNT_RESOURCE_PATH + 'applications/:application_id/' #:nodoc:
+  ACCOUNT_SERVER_RESOURCE_PATH = ACCOUNT_RESOURCE_PATH + 'servers/:server_id/' #:nodoc:
 
   module AccountResource #:nodoc:
     def account_id
@@ -128,6 +129,34 @@ module NewRelicApi
 
   end
 
+  # An application has many:
+  # +agents+:: the agent instances associated with this app
+  # +threshold_values+:: the health indicators for this application.
+  class Server < BaseResource
+    include AccountResource
+    include AgentResource
+
+    has_many :agents, :server_threshold_values
+
+    self.prefix = ACCOUNT_RESOURCE_PATH
+
+    def query_params#:nodoc:
+      account_query_params(:server_id => id)
+    end
+
+    class Agent < BaseResource
+      include AccountResource
+      include AgentResource
+
+      self.prefix = ACCOUNT_SERVER_RESOURCE_PATH
+
+      def query_params#:nodoc:
+        super.merge(:server_id => cluster_agent_id)
+      end
+    end
+
+  end
+
   # A threshold value represents a single health indicator for an application such as CPU, memory or response time.
   #
   # ==Fields
@@ -137,6 +166,43 @@ module NewRelicApi
   # +metric_value+:: The metric value associated with this threshold
   class ThresholdValue < BaseResource
     self.prefix = ACCOUNT_APPLICATION_RESOURCE_PATH
+
+    #   attr_reader :name, :begin_time, :metric_value, :threshold_value
+
+    # Return theshold_value as 0, 1, 2, or 3 representing grey (not reporting)
+    # green, yellow, and red, respectively.
+    def threshold_value
+      super.to_i
+    end
+
+    # Return the actual value of the threshold as a Float
+    def metric_value
+      super.to_f
+    end
+    # Returns the color value for this threshold (Gray, Green, Yellow or Red).
+    def color_value
+      case threshold_value
+        when 3 then 'Red'
+        when 2 then 'Yellow'
+        when 1 then 'Green'
+      else 'Gray'
+      end
+    end
+
+    def to_s #:nodoc:
+      "#{name}: #{color_value} (#{formatted_metric_value})"
+    end
+  end
+
+  # A threshold value represents a single health indicator for an application such as CPU, memory or response time.
+  #
+  # ==Fields
+  # +name+:: The name of the threshold setting associated with this threshold value.
+  # +begin_time+:: Time value indicating start of evaluation period, as a string.
+  # +threshold_value+:: A value of 0, 1, 2 or 3 representing gray (not reporting), green, yellow and red
+  # +metric_value+:: The metric value associated with this threshold
+  class ServerThresholdValue < BaseResource
+    self.prefix = ACCOUNT_SERVER_RESOURCE_PATH
 
     #   attr_reader :name, :begin_time, :metric_value, :threshold_value
 
@@ -177,6 +243,7 @@ module NewRelicApi
   #
   class Account < BaseResource
     has_many :applications
+    has_many :servers
     has_many :account_views
 
     def query_params #:nodoc:
@@ -207,7 +274,7 @@ module NewRelicApi
   # This model is used to mark production deployments in RPM
   # Only create is supported.
   # == Options
-  # 
+  #
   # Exactly one of the following is required:
   # * <tt>app_name</tt>: The value of app_name in the newrelic.yml file used by the application.  This may be different than the label that appears in the RPM UI.  You can find the app_name value in RPM by looking at the label settings for your application.
   # * <tt>application_id</tt>: The application id, found in the URL when viewing the application in RPM.
